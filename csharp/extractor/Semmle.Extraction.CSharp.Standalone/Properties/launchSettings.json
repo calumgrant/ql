@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "Semmle.Extraction.CSharp.Standalone": {
+      "commandName": "Project",
+      "commandLineArgs": "--skip-nuget",
+      "workingDirectory": "W:\\projects\\Hyperion"
+    }
+  }
+}

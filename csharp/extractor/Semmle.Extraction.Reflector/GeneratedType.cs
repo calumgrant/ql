@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 
 namespace Semmle.Extraction.Reflector
@@ -10,15 +11,8 @@ namespace Semmle.Extraction.Reflector
     /// A type that has been determined by reflection.
     /// It has a corresponding C# type, a QL type and a database type.
     /// </summary>
-    public interface IReflectedType
+    public interface IReflectedType : IPropertyType
     {
-        /// <summary>
-        /// Whether this type should be output to the DB scheme, QL and populator.
-        /// </summary>
-        bool Enabled { get; set; }
-
-        bool EnabledForPropertyType { get; }
-
         IEnumerable<IReflectedProperty> Properties { get; }
 
         bool DefinesProperty(string name);
@@ -30,19 +24,33 @@ namespace Semmle.Extraction.Reflector
         /// </summary>
         string TypeName { get; }
 
+        string CsharpTypeName { get; }
+
         /// <summary>
         /// True if this type can be instantiated,
         /// false if this type must be overridden.
         /// </summary>
         bool IsInstance { get; }
 
-        QlType QlType { get; }
+        // QlType QlType { get; }
 
         void AddProperty(IReflectedProperty prop);
 
         int NumColumns { get; }
 
         void AddSubtype(IReflectedType derived);
+
+        /// <summary>
+        /// Holds if this property is actually stored in the "Context"
+        /// variable.
+        /// </summary>
+        bool ProvidesContext { get; }
+
+        void GenerateDbScheme(TextWriter writer);
+
+        void GenerateQL(TextWriter writer);
+
+        void GenerateCSharp(TextWriter writer);
     }
 
     static class TypeExtensions2
@@ -55,139 +63,68 @@ namespace Semmle.Extraction.Reflector
 
         public static string GetDbInstanceType(this IReflectedType type) => type.GetDbType() + "_instance";
 
-        public static string GetQlTypeName(this IReflectedType type)
-        {
-            switch(type.QlType)
-            {
-                case QlType.Boolean:
-                    return "boolean";
-                case QlType.Float:
-                    return "float";
-                case QlType.Int:
-                    return "int";
-                case QlType.String:
-                    return "string";
-                case QlType.Object:
-                    return type.GetBaseName();
-                default:
-                    throw new ArgumentException($"Unhandled ql typename {type.QlType}");
-            }
-        }
-
-        public static string GetDbTypeStorage(this IReflectedType type)
-        {
-            switch (type.QlType)
-            {
-                case QlType.Boolean:
-                    return "boolean";
-                case QlType.Float:
-                    return "float";
-                case QlType.Int:
-                    return "int";
-                case QlType.String:
-                    return "string";
-                case QlType.Object:
-                    return "int";
-                default:
-                    throw new ArgumentException($"Unhandled ql storage for {type.QlType}");
-            }
-        }
-
-        public static string GetDbTypeName(this IReflectedType type)
-        {
-            switch (type.QlType)
-            {
-                case QlType.Boolean:
-                    return "boolean";
-                case QlType.Float:
-                    return "float";
-                case QlType.Int:
-                    return "int";
-                case QlType.String:
-                    return "string";
-                case QlType.Object:
-                    return type.GetDbType();
-                default:
-                    throw new ArgumentException($"Unhandled ql storage for {type.QlType}");
-            }
-        }
-
         public static bool InheritsProperty(this IReflectedType type, string name) => type.BaseTypes.Any(bt => bt.DefinesProperty(name));
+    }
+
+    class GeneratedColumn
+    {
+        QlType type;
+        string columnName;
+    }
+
+    class GeneratedPredicate
+    {
+        string predicateName;
+
+        GeneratedColumn[] columns;
     }
 
     public sealed class ReflectedType : IReflectedType
     {
+        bool IPropertyType.IsNullable => true;
+
+        public string DbType => this.GetDbType();
+
+        string IPropertyType.DbStorageType => "int";
+
+        public string QlType => TypeName.Replace(".", "_").Replace("+", "_");
+
         public string TypeName { get; set; }
 
+        public string CsharpTypeName => TypeName.Replace('+', '.');
+
+        bool IReflectedType.ProvidesContext => false;
+
         IEnumerable<IReflectedProperty> IReflectedType.Properties => Properties.Values;
-
-        public bool Enabled { get; set; } = true;
-
-        public bool EnabledForPropertyType
-        {
-            get
-            {
-                switch(QlType)
-                {
-                    case QlType.Boolean:
-                    case QlType.String:
-                    case QlType.Int:
-                    case QlType.Float:
-                        return true;
-                    case QlType.Object:
-                        return Enabled;
-                    case QlType.Excluded:
-                        return false;
-                    default:
-                        throw new ArgumentException("Invalid property type");
-                }
-            }
-        }
-
-        public QlType QlType { get; set; }
 
         public ReflectedType(Type type, Model m)
         {
             TypeName = type.FullName;
-            QlType = type.GetQlType();
 
             IsInstance = type.IsClass; //  && !type.IsAbstract;
 
             //if (!m.IsRelevantType(type))
             //   Enabled = false;
 
-            if (type.IsEnum)
-                Enabled = false;
-            if (TypeName == "System.Object")
-                Enabled = false;
 
-            switch(QlType)
-            {
-                case QlType.Excluded:
-                case QlType.String:
-                case QlType.Int:
-                case QlType.Boolean:
-                    Enabled = false;
-                    break;
-            }
 
-            if (type.IsGenericType)
-                Enabled = false;
+            // Static classes are this:
 
-            if (type.IsPointer)
-                Enabled = false;
+            // Exclude static types.
 
             // Generate supertypes here
 
             if (type.BaseType != null && m.IsRelevantType (type.BaseType) )
             {
-                var rt = m.LookupType(type.BaseType);
-                if(rt.Enabled)
+                if(m.LookupType(type.BaseType, out var rt))
                     supertypes.Add(rt);
             }
 
-            foreach (var t in type.GetInterfaces().Where(t => m.IsRelevantType(t)).Select(t => m.LookupType(t)))
-                supertypes.Add(t);
+            foreach (var t in type.GetInterfaces().Where(t => m.IsRelevantType(t)))
+            {
+                if (m.LookupType(t, out var rt))
+                    supertypes.Add(rt);
+            }
 
             foreach (var s in supertypes)
                 s.AddSubtype(this);
@@ -195,39 +132,13 @@ namespace Semmle.Extraction.Reflector
 
         public void CreateProperties(Type type, Model model)
         {
-            foreach(var prop in type.GetProperties().Where(p=>p.DeclaringType == type && p.GetIndexParameters().Length==0))
+            foreach(var prop in model.GetProperties(type))
             {
-                bool isOverride = prop.GetGetMethod() != prop.GetGetMethod().GetBaseDefinition();
-
-                if(!isOverride)
-                    Properties[prop.Name] = new ReflectedProperty(model, this, prop);
-
-                if (!Properties.Any())
-                {
-                    Enabled = false;
-                }
+                if (prop is MethodInfo mi)
+                    Properties[prop.Name] = new ReflectedProperty(model, this, mi);
+                else if (prop is PropertyInfo pi)
+                    Properties[prop.Name] = new ReflectedProperty(model, this, pi);
             }
-            foreach (var prop in type.GetMethods().Where(p => p.DeclaringType == type && model.IsInterestingGetter(p)))
-            {
-                var @base = prop.GetBaseDefinition();
-                bool isOverride = prop != prop.GetBaseDefinition();
-
-                if(!isOverride)
-                    Properties[prop.Name] = new ReflectedProperty(model, this, prop);
-            }
-
-            // Look for properties that could apply to other types
-            foreach (var prop in type.GetMethods().Where(p => p.DeclaringType == type))
-            {
-                if (model.IsPropertyMethod(prop, out var targetType) && targetType != type)
-                {
-                    // Bug - it also attaches methods from base types.
-                    var targetGt = model.LookupType(targetType);
-                    var member = new ReflectedProperty(model, targetGt, prop);
-                    targetGt.AddProperty(member);
-                }
-            }
-
         }
 
         public bool InheritsProperty(string name) => supertypes.Any(t => t.DefinesProperty(name));
@@ -265,19 +176,16 @@ namespace Semmle.Extraction.Reflector
         void setColumns()
         {
             NumColumns = 1;
-            foreach (var prop in Properties.Values.Where(p => p.Enabled && !p.Nullable))
+            foreach (var prop in InlineProperties)
             {
                 prop.Column = NumColumns++;
             }
         }
 
-        IEnumerable<IReflectedProperty> InlineProperties => Properties.Values.Where(p => p.Enabled && !p.Nullable);
+        IEnumerable<IReflectedProperty> InlineProperties => Properties.Values.Where(p => p.IsInline);
 
         public void GenerateDbScheme(TextWriter writer)
         {
-            if (!Enabled)
-                return;
-
             writer.WriteLine($"// Type information for {TypeName}");
             writer.WriteLine();
 
@@ -292,12 +200,12 @@ namespace Semmle.Extraction.Reflector
                 // Generate the base table
                 writer.WriteLine($"{this.GetTableName()}(");
                 if (IsInstance)
-                    writer.Write($"  int id: {this.GetDbTypeName()}");
+                    writer.Write($"  int id: {this.DbType}");
                 else
-                    writer.Write($"  int id: {this.GetDbTypeName()} ref");
+                    writer.Write($"  int id: {this.DbType} ref");
 
-                foreach (var prop in Properties.Values.Where(p => p.Enabled && !p.Nullable))
-                    writer.Write($",\n  {prop.Columns.Single().GetDbTypeStorage()} {prop.GetColumnName()}: {prop.Columns.Single().GetDbTypeName()} ref");
+                foreach (var prop in InlineProperties)
+                    writer.Write($",\n  {prop.Columns.Single().DbStorageType} {prop.GetColumnName()}: {prop.Columns.Single().DbType} ref");
 
                 writer.WriteLine(")");
                 writer.WriteLine();
@@ -307,7 +215,7 @@ namespace Semmle.Extraction.Reflector
             {
                 string instanceSuffix = subtypes.Any() ? "_instance" : "";
                 writer.WriteLine($"{this.GetTableName()}{instanceSuffix}(");
-                writer.WriteLine($"  int id: {this.GetDbTypeName()}{instanceSuffix});");
+                writer.WriteLine($"  int id: {this.DbType}{instanceSuffix});");
                     writer.WriteLine();
             }
 
@@ -318,7 +226,7 @@ namespace Semmle.Extraction.Reflector
 
             if (HasSubTypes)
             {
-                writer.WriteLine($"{this.GetDbTypeName()} =");
+                writer.WriteLine($"{this.DbType} =");
                 bool first = true;
 
                 foreach (var subtype in DbSubtypes)
@@ -345,17 +253,16 @@ namespace Semmle.Extraction.Reflector
 
         public void GenerateQL(TextWriter writer)
         {
-            if (!Enabled) return;
             setColumns();
 
             writer.WriteLine();
             writer.WriteLine($"/** Auto-generated class for `{TypeName}`. */");
-            writer.WriteLine($"class {this.GetQlTypeName()} extends");
+            writer.WriteLine($"class {this.QlType} extends");
             foreach(var @base in supertypes)
             {
-                writer.WriteLine($"  {@base.GetQlTypeName()},");
+                writer.WriteLine($"  {@base.QlType},");
             }
-            writer.WriteLine($"  {this.GetDbType()}");
+            writer.WriteLine($"  {this.DbType}");
             writer.WriteLine("{");
             foreach (var prop in Properties.Values)
                 prop.GenerateQL(writer);
@@ -375,8 +282,57 @@ namespace Semmle.Extraction.Reflector
 
         public void GenerateCSharp(TextWriter writer)
         {
-            writer.WriteLine($"    void Populate(int id, {TypeName} obj, Populator populator)");
+            // Populates an item, on demand,
+            // and returns its label.
+            writer.WriteLine($"    int GetLabel({CsharpTypeName} obj)");
             writer.WriteLine("    {");
+            writer.WriteLine("        if(GetOrCreateLabel(obj, out int label))");
+            writer.WriteLine("        {");
+            writer.Write("            ");
+
+            foreach(var t in subtypes)
+            {
+                writer.WriteLine($"if(obj is {t.CsharpTypeName}) Populate(label, ({t.CsharpTypeName})obj);");
+                writer.Write("            else ");
+            }
+            writer.WriteLine("Populate(label, obj);"); // ??
+
+            // Dispatch to the relevant populator
+            // Need to generate the label, and populate everything else
+            // if(obj is T1) Populate(label, (T1)obj);
+            // else if(obj is T2) Populate(label, (T2)obj);
+            // else ...
+            writer.WriteLine("        }");
+            writer.WriteLine("        return label;");
+            writer.WriteLine("    }");
+            writer.WriteLine();
+
+            writer.WriteLine($"    void Populate(int id, {CsharpTypeName} obj)");
+            writer.WriteLine("    {");
+
+            foreach (var p in Properties.Values)
+            {
+                p.GenerateCSharp(writer);
+            }
+
+            // Creates a label, *and* populates fields
+            writer.WriteLine("        writer.Write(id);");
+            writer.WriteLine("        writer.Write(\"=\");");
+            writer.WriteLine("        writer.WriteLine(\"*\");");
+            writer.WriteLine();
+            // Populate the main table
+            if (InlineProperties.Any())
+            {
+                writer.WriteLine($"        writer.Write(\"{ this.GetTableName()}(\");");
+                writer.WriteLine($"        writer.Write(id);");
+                foreach (var p in InlineProperties)
+                {
+                    writer.WriteLine($"        writer.Write(\",\");");
+                    writer.WriteLine($"        writer.Write(prop_{p.Name});");
+                }
+                writer.WriteLine($"        writer.WriteLine(\")\");");
+            }
+
             writer.WriteLine("    }");
             writer.WriteLine();
         }

@@ -41,18 +41,11 @@ namespace Semmle.Extraction.Reflector
         void CustomizeProperty(IReflectedProperty p);
 
         /// <summary>
-        /// Gets a (possibly-empty) list of types that are always present in the
-        /// context of an extraction. This allows further "getters" to be automatically
-        /// detected.
-        /// </summary>
-        IEnumerable<Type> Singletons { get; }
-
-        /// <summary>
         /// Holds if a particular type should be excluded.
         /// </summary>
         /// <param name="type"></param>
         /// <returns></returns>
-        //bool Exclude(Type type);
+        bool Exclude(Type type);
 
         /// <summary>
         /// Holds if a particular member (property, method, field)
@@ -60,7 +53,7 @@ namespace Semmle.Extraction.Reflector
         /// </summary>
         /// <param name="info">The member to exclude.</param>
         /// <returns>True iff the member should be excluded.</returns>
-        //bool Exclude(MemberInfo info);
+        bool Exclude(MemberInfo info);
 
         /// <summary>
         /// Generates a label for a particular object.

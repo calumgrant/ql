@@ -19,37 +19,15 @@ namespace Semmle.Extraction.Reflector
         string Name { get; }
 
         /// <summary>
-        /// True if this property should be output/populated.
-        /// If false, this property does not form part of the model
-        /// and is not written to the DB scheme and QL.
-        /// </summary>
-        bool Enabled { get; set; }
-
-        /// <summary>
         /// The type to which this property applies.
         /// </summary>
         IReflectedType DefiningType { get;  }
 
-        /// <summary>
-        /// A list of column types for the property.
-        /// Usually there is just one column type, but tuples and key-value pairs
-        /// can have multiple columns. Zero columns is a member predicate.
-        /// </summary>
-        IEnumerable<IReflectedType> Columns { get; }
+        IPropertyType[] Columns { get; }
 
-        /// <summary>
-        /// True if this represents members of an array,
-        /// that are indexed from 0.
-        /// </summary>
-        bool Enumerated { get; }
+        bool IsEnumerated { get; }
 
-        /// <summary>
-        /// True if this property is assumed to not contain null,
-        /// even if the type suggests that the value could be nullable.
-        /// Where a null reftype is encountered, a special null-value must be created.
-        /// null strings are treated as empty strings.
-        /// </summary>
-        bool Nullable { get; set; }
+        bool IsInline { get; }
 
         /// <summary>
         /// For inline properties (Nullable=false), the value is stored in the parent table.
@@ -57,10 +35,11 @@ namespace Semmle.Extraction.Reflector
         /// </summary>
         int Column { set; }
 
-
         void GenerateDbScheme(TextWriter writer);
 
         void GenerateQL(TextWriter ql);
+
+        void GenerateCSharp(TextWriter cs);
     }
 
     public static class PropertyExtensions
@@ -76,114 +55,67 @@ namespace Semmle.Extraction.Reflector
 
     public class ReflectedProperty : IReflectedProperty
     {
-        IReflectedType IReflectedProperty.DefiningType => definingType;
+        public IPropertyType[] Columns { get; }
 
-        readonly IReflectedType definingType;
-        // public readonly Type PropertyType;
-        readonly string Name;
-        readonly bool isIndexed;
-        // QlType qlType;
+        public bool IsEnumerated { get; }
 
-        string IReflectedProperty.Name => Name;
+        public IReflectedType DefiningType { get; }
 
-        bool IReflectedProperty.Enumerated => isIndexed;
-
-        // public static GeneratedProperty CreateExtension(GeneratedType attachedType, )
+        public string Name { get; }
 
         public override string ToString() => Name;
 
-        IReflectedType[] columns;
+        // The C# code that is run in order to get the raw value out of "obj".
+        readonly string csharpAccessor;
 
-        public IEnumerable<IReflectedType> Columns => columns;
+        // The code to get each column
+        // string[] csharpSomething...
 
-        public ReflectedProperty(Model model, IReflectedType dt, string name, Type propertyType)
+        public ReflectedProperty(Model model, IReflectedType dt, string name, Type type, string accessor)
         {
-            definingType = dt;
+            DefiningType = dt;
             Name = name;
+            csharpAccessor = accessor;
 
-            var et = Model.IEnumerableType(propertyType);
-            if (et != null)
-                isIndexed = true;
-            else
-                et = propertyType;
+            // Pick apart "type" to see if it's enumerable
+            IsEnumerated = type.IsEnumerable(out var et);
+            if (IsEnumerated) type = et;
 
-            if (Model.IEnumerableType(et) != null)
-                ;
+            Type[] columns = type.IsGenericType ? type.GenericTypeArguments : new Type[] { type };
 
-            if (isIndexed)
-                Nullable = true;
-            else if (propertyType.IsNullable())
-            {
-                et = propertyType.GetGenericArguments()[0];
-                Nullable = true;
-            }
-            else if (propertyType.IsString() || propertyType.IsValueType)
-                Nullable = false;
-            else
-                Nullable = true;
-
-            if (et.IsComposite())
-            {
-                columns = et.GenericTypeArguments.Where(t => model.IsRelevantType(t)).Select(t => model.LookupType(t)).ToArray();
-            }
-            else
-            {
-                columns = new IReflectedType[] { model.LookupType(et) };
-            }
-
-            // If it's an override, Enabled = false;
-            Enabled = true;
-
-            if (definingType.InheritsProperty(name))
-            {
-                IsOverride = true;
-                Enabled = false;
-            }
-
-            if (columns.Any(t => !t.EnabledForPropertyType))
-                Enabled = false;
-            //if (propertyType.IsEnum || propertyType.IsString() || propertyType.IsPrimitive)
-             //   Enabled = false;
+            Columns = columns.Select(c => model.GetPropertyType(c)).ToArray();
         }
 
-        bool IsOverride { get; set; }
-
-        public ReflectedProperty(Model model, IReflectedType dt, MethodInfo info) : this(model, dt, info.Name, info.ReturnType)
+        public ReflectedProperty(Model model, IReflectedType dt, MethodInfo info) : this(model, dt, info.Name, info.ReturnType, $"obj.{info.Name}()")
         {
         }
 
-        public ReflectedProperty(Model model, IReflectedType dt, PropertyInfo info) : this(model, dt, info.Name, info.PropertyType)
+        public ReflectedProperty(Model model, IReflectedType dt, PropertyInfo info) : this(model, dt, info.Name, info.PropertyType, $"obj.{info.Name}")
         {
         }
 
+        public bool IsInline => !IsEnumerated && InlineColumns.Any();  // !! Fixme -- could be partially inline
 
-       // public bool IsOverride =>
-
-        //public string TableName => definingType.TableName + "__" + Name;
-
-        public bool Enabled { get; set; } = true;
-
-        public bool IsInline => !Nullable;
+        public IEnumerable<IPropertyType> InlineColumns => Columns.Where(p => !p.IsNullable);
 
         public string ColumnName => Name.ToLower();
 
-        public bool Nullable { get; set; }
+        public bool IsNullable => Columns.Length == 1 && Columns[0].IsNullable;
 
         public void GenerateDbScheme(TextWriter dbscheme)
         {
-            if (!Enabled) return;
-            if (isIndexed)
+            if (IsEnumerated)
             {
                 dbscheme.WriteLine("#keyset[id,index]");
                 dbscheme.WriteLine($"{this.GetTableName()}(");
-                dbscheme.WriteLine($"  int id: {definingType.GetDbType()} ref,");
+                dbscheme.WriteLine($"  int id: {DefiningType.DbType} ref,");
                 dbscheme.Write("  int index: int ref");
                 GenerateDbArgs(dbscheme);
             }
-            else if(Nullable)
+            else if(IsNullable)
             {
                 dbscheme.WriteLine($"{this.GetTableName()}(");
-                dbscheme.Write($"  unique int id: {definingType.GetDbType()} ref");
+                dbscheme.Write($"  unique int id: {DefiningType.GetDbType()} ref");
                 GenerateDbArgs(dbscheme);
             }
         }
@@ -195,7 +127,7 @@ namespace Semmle.Extraction.Reflector
             int column = 1;
             foreach (var t in Columns)
             {
-                ql.Write($", {t.GetQlTypeName()} value{column++}");
+                ql.Write($", {t.QlType} value{column++}");
             }
         }
 
@@ -204,7 +136,7 @@ namespace Semmle.Extraction.Reflector
             int column = 1;
             foreach (var t in Columns)
             {
-                dbscheme.Write($",\n  {t.GetDbTypeStorage()} value{column++}: {t.GetDbTypeName()} ref");
+                dbscheme.Write($",\n  {t.DbStorageType} value{column++}: {t.DbType} ref");
             }
             dbscheme.WriteLine(")");
             dbscheme.WriteLine();
@@ -212,20 +144,18 @@ namespace Semmle.Extraction.Reflector
 
         public void GenerateQL(TextWriter ql)
         {
-            if (!Enabled) return;
-
-            string overrideString = IsOverride ? "override " : "";
+            string overrideString = ""; //  IsOverride ? "override " : "";
 
             ql.WriteLine($"  /** Gets the `{Name}` member. */");
-            if (isIndexed)
+            if (IsEnumerated)
             {
-                switch (columns.Length)
+                switch (Columns.Length)
                 {
                     case 0:
                         ql.WriteLine($"  {overrideString}predicate is{Name}(int index) {{");
                         break;
                     case 1:
-                        ql.WriteLine($"  {overrideString}{columns[0].GetQlTypeName()} get{Name}(int index) {{");
+                        ql.WriteLine($"  {overrideString}{Columns[0].QlType} get{Name}(int index) {{");
                         break;
                     default:
                         ql.Write($"  {overrideString}predicate get{Name}(int index");
@@ -233,7 +163,7 @@ namespace Semmle.Extraction.Reflector
                         break;
                 }
                 ql.Write($"    {this.GetTableName()}(this, index");
-                if (columns.Length == 1)
+                if (Columns.Length == 1)
                 {
                     ql.Write(", result");
                 }
@@ -249,9 +179,9 @@ namespace Semmle.Extraction.Reflector
             }
             else
             {
-                bool booleanPredicate = columns.Length == 1 && columns[0].TypeName == "System.Boolean" && IsInline;
+                bool booleanPredicate = Columns.Length == 1 && Columns[0].DbType == "boolean" && IsInline;
 
-                switch (columns.Length)
+                switch (Columns.Length)
                 {
                     case 0:
                         ql.WriteLine($"  {overrideString}predicate is{Name}() {{");
@@ -260,7 +190,7 @@ namespace Semmle.Extraction.Reflector
                         if (booleanPredicate)
                             ql.WriteLine($"  {overrideString}predicate is{Name}() {{");
                         else
-                            ql.WriteLine($"  {overrideString}{columns[0].GetQlTypeName()} get{Name}() {{");
+                            ql.WriteLine($"  {overrideString}{Columns[0].QlType} get{Name}() {{");
                         break;
                     default:
                         ql.Write($"  {overrideString}predicate get{Name}(");
@@ -270,14 +200,14 @@ namespace Semmle.Extraction.Reflector
 
                 if (IsInline)
                 {
-                    ql.Write($"    {definingType.GetTableName()}(this");
+                    ql.Write($"    {DefiningType.GetTableName()}(this");
                     for (int c = 1; c < Column; ++c)
                         ql.Write(", _");
                     if (booleanPredicate)
                         ql.Write(", true");
                     else
                         ql.Write(", result");
-                    for (int c = Column + 1; c < definingType.NumColumns; ++c)
+                    for (int c = Column + 1; c < DefiningType.NumColumns; ++c)
                         ql.Write(", _");
                     ql.WriteLine(")");
                 }
@@ -285,7 +215,7 @@ namespace Semmle.Extraction.Reflector
                 {
                     ql.Write($"    {this.GetTableName()}(this");
 
-                    if (columns.Length == 1)
+                    if (Columns.Length == 1)
                         ql.Write(", result");
                     else
                     {
@@ -300,5 +230,21 @@ namespace Semmle.Extraction.Reflector
                 ql.WriteLine();
             }
         }
+
+        public void GenerateCSharp(TextWriter cs)
+        {
+            cs.WriteLine($"        var prop_{this.Name} = {csharpAccessor};");
+
+#if false
+            if (isIndexed)
+            {
+                cs.WriteLine( "        c=0;");
+                cs.WriteLine($"        foreach (var i in prop_{this.Name})");
+
+                cs.WriteLine( "             writer.Write(\"predicate_name(\").Write(c++).Write(\",\").Write(i).WriteLine(\")\");");
+            }
+#endif
+        }
+
     }
 }

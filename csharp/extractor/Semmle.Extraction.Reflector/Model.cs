@@ -6,94 +6,6 @@ using System.Reflection;
 
 namespace Semmle.Extraction.Reflector
 {
-    public enum QlType
-    {
-        Excluded,   // This type should not be populated
-        Object,     // An object-id
-        String,
-        Boolean,
-        Int,
-        Float,
-        Enumerable,
-        Composite   // Tuples, Key-Value pairs etc.
-    }
-
-    static class TypeExtensions
-    {
-        public static bool IsString(this Type type) => type.FullName == "System.String";
-
-        public static bool IsEnumerable(this Type type) =>
-            type.Name == "IEnumerable`1" || type.GetInterfaces().Any(i => i.Name == "IEnumerable`1");
-
-        public static bool IsNullable(this Type type) => type.Name == "Nullable`1" && type.Namespace=="System";
-
-        public static bool IsEnumerable(this Type type, out Type enumeratedType)
-        {
-            if (type.IsString())
-            {
-                // Strings are enumerable, but we don't want to enumerate the individual characters.
-                enumeratedType = null;
-                return false;
-            }
-
-            var enumerable = type.Name == "IEnumerable`1" ?
-                type :
-                type.GetInterfaces().Where(i => i.Name == "IEnumerable`1").FirstOrDefault();
-
-            if(enumerable != null)
-            {
-                enumeratedType = enumerable.GetGenericArguments()[0];
-                return true;
-            }
-            else
-            {
-                enumeratedType = null;
-                return false;
-            }
-        }
-
-        public static bool IsComposite(this Type type)
-        {
-            if (type.Name == "KeyValuePair`2")
-                return true;
-            return false;
-        }
-
-        public static QlType GetQlType(this Type type)
-        {
-            if (type.IsPrimitive)
-            {
-                switch (type.FullName)
-                {
-                    case "System.String": return QlType.String;
-                    case "System.Boolean": return QlType.Boolean;
-                    case "System.Char":
-                    case "System.UInt64":
-                    case "System.Byte":
-                    case "System.Int64":
-                    case "System.Int16":
-                    case "System.Int32": return QlType.Int;
-                    case "System.Float64":
-                    case "System.Double":
-                    case "System.Float32": return QlType.Float;
-                    case "System.IntPtr": return QlType.Excluded;
-                    default:
-                        throw new ArgumentException("Unhandled primitive type");
-                }
-            }
-            else if (type.IsEnum || type.IsString())
-                return QlType.String;
-            else if (type.IsEnumerable())
-                return QlType.Enumerable;
-            else if (type.IsComposite())
-                return QlType.Composite;
-            else
-                return QlType.Object;
-        }
-    }
-
-
-
     /// <summary>
     /// A data model derived from type information.
     /// </summary>
@@ -105,10 +17,9 @@ namespace Semmle.Extraction.Reflector
         {
             Configuration = config;
             includedAssemblies = new HashSet<string>(Configuration.Assemblies.Select(a=>a.GetName().Name));
-            singletons = new HashSet<string>(Configuration.Singletons.Select(t=>t.FullName));
 
             foreach (var t in config.SeedTypes)
-                LookupType(t);
+                LookupType(t, out var _);
 
             // Get all subtypes
             foreach(var asm in config.AssembliesForSubtypes)
@@ -116,7 +27,7 @@ namespace Semmle.Extraction.Reflector
                 {
                     // Are any base types or interfaces relevant
                     if (!types.ContainsKey(type.FullName) && ExtendsRelevantType(type))
-                        LookupType(type);
+                        LookupType(type, out var _);
                 }
         }
 
@@ -128,30 +39,29 @@ namespace Semmle.Extraction.Reflector
         {
             if (type == null) return false;
             if (!IsRelevantType(type)) return false;
-            if (types.ContainsKey(type.FullName)) return LookupType(type).Enabled;
+            if (types.ContainsKey(type.FullName)) return true;
             if (ExtendsRelevantType(type.BaseType)) return true;
             return type.GetInterfaces().Any(ExtendsRelevantType);
         }
 
-        private readonly Dictionary<string, ReflectedType> types = new Dictionary<string, ReflectedType>();
+        private readonly Dictionary<string, IReflectedType> types = new Dictionary<string, IReflectedType>();
 
-        private ReflectedType AddType(Type t)
+        private bool AddType(Type t, out IReflectedType retType)
         {
+            if (!GenerateType(t))
+            {
+                retType = null;
+                return false;
+            }
+
             var rt = new ReflectedType(t, this);
             Configuration.CustomizeType(rt);
             types[t.FullName] = rt;
-            if (rt.Enabled)
-            {
-                rt.CreateProperties(t, this);
-                foreach (var prop in rt.Properties)
-                    Configuration.CustomizeProperty(prop.Value);
-            }
-            return rt;
-        }
-
-        void CustomizeProperty(IReflectedProperty prop)
-        {
-
+            rt.CreateProperties(t, this);
+            foreach (var prop in rt.Properties)
+                Configuration.CustomizeProperty(prop.Value);
+            retType = rt;
+            return true;
         }
 
         public static Type IEnumerableType(Type type)
@@ -173,85 +83,9 @@ namespace Semmle.Extraction.Reflector
             return true;
         }
 
-        public IReflectedType LookupType(Type type)
+        public bool LookupType(Type type, out IReflectedType rt)
         {
-            // type = IEnumerableType(type) ?? type;
-
-            if (!types.TryGetValue(type.FullName, out var gt))
-            {
-                gt = AddType(type);
-            }
-            return gt;
-        }
-
-        private void AddAllTypes(Assembly asm)
-        {
-            foreach (var type in asm.DefinedTypes.Where(t => t.IsPublic && !t.IsValueType))
-                AddType(type);
-        }
-
-        bool InterestingField(FieldInfo field)
-        {
-            return field.IsPublic;
-        }
-
-        public bool IsInterestingPropertyType(Type t)
-        {
-            return types.ContainsKey(t.FullName) || t.IsEnum || t.IsPrimitive || t.FullName == "System.String";
-        }
-
-        /// <summary>
-        /// The
-        /// </summary>
-        /// <param name="t"></param>
-        /// <returns></returns>
-        public string GetDbTypeName1(Type t)
-        {
-            if (t.IsPrimitive)
-                return GetPrimitiveTypeName(t);
-            else if (t.IsEnum || t.IsString())
-                return "varchar(1000)";  // Encode enums as their string values
-            else if (types.TryGetValue(t.FullName, out var gt))
-                return "int";
-            else
-                throw new ArgumentException("Type t is not of interest");
-        }
-
-        public string GetPrimitiveTypeName(Type type)
-        {
-            if (type.IsEnum) return "string";
-
-            switch (type.FullName)
-            {
-                case "System.String": return "string";
-                case "System.Boolean": return "boolean";
-                case "System.Char":
-                case "System.UInt64":
-                case "System.Byte":
-                case "System.Int32": return "int";
-                case "System.Float64":
-                case "System.Float32": return "float";
-                default:
-                    throw new ArgumentException("Unhandled primitive type");
-            }
-        }
-
-
-        public ReflectedType GetGeneratedType(Type t)
-        {
-            return types[t.FullName];
-        }
-
-
-        bool isNullable(Type t)
-        {
-            if (t.FullName == "System.String") return false;    // Encode null strings as ""
-            if (t.IsValueType) return false;
-            if (t.IsPrimitive) return false;
-
-            // !! Nullabletype
-
-            return true;
+            return types.TryGetValue(type.FullName, out rt) || AddType(type, out rt);
         }
 
         public bool IsInterestingGetter(MethodInfo method)
@@ -277,7 +111,7 @@ namespace Semmle.Extraction.Reflector
 
         bool parameterNeedsValue(ParameterInfo info)
         {
-            return !info.HasDefaultValue && !singletons.Contains(info.ParameterType.FullName);
+            return !info.HasDefaultValue; //  && !singletons.Contains(info.ParameterType.FullName);
         }
 
         /// <summary>
@@ -295,15 +129,6 @@ namespace Semmle.Extraction.Reflector
 
             if (!info.Name.StartsWith("Get")) return false;
 
-            if (!info.IsStatic && !singletons.Contains(info.DeclaringType.FullName))
-            {
-                return false;
-
-                // ??
-                ++requiredParams;
-                type = info.DeclaringType;
-            }
-
             // There is one free argument, whose type is "type"
             foreach(var t in info.GetParameters())
             {
@@ -317,6 +142,151 @@ namespace Semmle.Extraction.Reflector
         }
 
         HashSet<string> interestingGetters = new HashSet<string>();
+
+        /// <summary>
+        /// Holds if this type should be generated.
+        /// </summary>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        public bool GenerateType(Type type)
+        {
+            string name = type.FullName;
+
+            if (type.IsEnum)
+                return false;
+            if (name == "System.Object")
+                return false;
+
+            switch (type.GetQlType())
+            {
+                case QlType.Excluded:
+                case QlType.String:
+                case QlType.Int:
+                case QlType.Boolean:
+                    return false;
+            }
+
+            if (type.IsGenericType)
+                return false;
+
+            if (type.IsPointer)
+                return false;
+
+            for (Type t = type; t != null; t = t.DeclaringType)
+            {
+                if (!t.IsPublic)
+                    return false;
+            }
+
+            if (type.IsAbstract && type.IsSealed)
+                return false;
+
+            if (Configuration.Exclude(type))
+                return false;
+
+            if (!GetProperties(type).Any())
+                return false;
+
+            return true;
+        }
+
+        public bool ValidPropertyType(Type type)
+        {
+            switch (type.GetQlType())
+            {
+                case QlType.Boolean:
+                case QlType.String:
+                case QlType.Int:
+                case QlType.Float:
+                case QlType.Composite:
+                    return true;
+                case QlType.Object:
+                    return GenerateType(type);
+                case QlType.Excluded:
+                    return false;
+                default:
+                    throw new ArgumentException("Invalid property type");
+            }
+        }
+
+        /// <summary>
+        /// Gets the potentially interesting properties of this type.
+        /// </summary>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        public IEnumerable<MemberInfo> GetProperties(Type type)
+        {
+            return type.GetMembers().Where(info => GenerateProperty(info));
+        }
+
+        /// <summary>
+        /// Holds if this property is interesting and should be generated.
+        /// </summary>
+        /// <param name="info"></param>
+        /// <returns></returns>
+        public bool GenerateProperty(MemberInfo info)
+        {
+            Type propertyType;
+
+            if (info is PropertyInfo pi)
+            {
+                if (pi.GetGetMethod().IsStatic)
+                    return false;
+                propertyType = pi.PropertyType;
+
+                if (pi.GetGetMethod().GetBaseDefinition() != pi.GetGetMethod())
+                    return false;   // This is an override -- ignore
+
+                if (pi.GetIndexParameters().Length != 0)
+                    return false;   // An indexer -- ignore
+            }
+            else if(info is MethodInfo mi)
+            {
+                propertyType = mi.ReturnType;
+
+                if (mi.GetBaseDefinition() != null)
+                    return false;   // This is an override -- ignore
+
+                if (!IsInterestingGetter(mi))
+                    return false;
+
+                if (!IsPropertyMethod(mi, out var targetType) || targetType == propertyType)
+                    return false;
+            }
+            else
+            {
+                return false;
+            }
+
+            var et = Model.IEnumerableType(propertyType) ?? propertyType;
+
+            if (!ValidPropertyType(et)) return false;
+
+            if (Configuration.Exclude(info))
+                return false;
+
+            //if (columns.Any(t => !t.EnabledForPropertyType))
+            //    return false;
+
+           return true;
+        }
+
+        // Convert a Type into a property type
+        public IPropertyType GetPropertyType(Type t)
+        {
+            switch(t.GetQlType())
+            {
+                case QlType.Boolean: return new BoolType();
+                case QlType.Float: return new FloatType();
+                case QlType.Int: return new IntType();
+                case QlType.String: return new StringType();
+                case QlType.Object:
+                    if (LookupType(t, out var generatedType))
+                        return generatedType;
+                    break;
+            }
+            throw new ArgumentException("Invalid type");
+        }
 
         public void GenerateDbScheme(TextWriter writer)
         {
@@ -338,12 +308,14 @@ namespace Semmle.Extraction.Reflector
 
         public void GenerateCSharp(TextWriter writer)
         {
-            writer.WriteLine("namespace GeneratedModels");
+            writer.WriteLine("partial class Populator");
             writer.WriteLine("{");
+
             foreach (var type in types)
             {
                 type.Value.GenerateCSharp(writer);
             }
+
             writer.WriteLine("}");
         }
     }

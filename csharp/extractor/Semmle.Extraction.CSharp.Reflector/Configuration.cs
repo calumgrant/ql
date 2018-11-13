@@ -37,7 +37,7 @@ namespace Semmle.Extraction.CSharp.Reflector
             {
                 yield return MicrosoftCodeAnalysisAssembly;
                 yield return MicrosoftCodeAnalysisCSharpAssembly;
-                yield return SystemReflectionMetadataAssembly;
+                // yield return SystemReflectionMetadataAssembly;
             }
         }
 
@@ -54,28 +54,18 @@ namespace Semmle.Extraction.CSharp.Reflector
 
         public IEnumerable<Assembly> AssembliesForSubtypes => Assemblies;
 
-        public IEnumerable<Type> Singletons
+        public bool Exclude(Type t)
         {
-            get
+            var typename = t.FullName;
+            if (typename.EndsWith("Resolver") ||
+                typename.EndsWith("Comparer") ||
+                typename.StartsWith("System.Reflection") ||
+                typename.StartsWith("System.Text"))
             {
-                yield return MicrosoftCodeAnalysisAssembly.GetType("Microsoft.CodeAnalysis.SemanticModel");
-                yield return MicrosoftCodeAnalysisCSharpAssembly.GetType("Microsoft.CodeAnalysis.CSharp.CSharpCompilation");
-                yield return MicrosoftCodeAnalysisAssembly.GetType("Microsoft.CodeAnalysis.Compilation");
-            }
-        }
-
-        public void CustomizeType(IReflectedType t)
-        {
-            if (t.TypeName.EndsWith("Resolver") ||
-                t.TypeName.EndsWith("Comparer") ||
-                t.TypeName.StartsWith("System.Reflection") ||
-                t.TypeName.StartsWith("System.Text"))
-            {
-                t.Enabled = false;
-                return;
+                return true;
             }
 
-            switch(t.TypeName)
+            switch (typename)
             {
                 case "Microsoft.CodeAnalysis.CSharp.Symbols.CSharpAttributeData":
                 case "Microsoft.CodeAnalysis.Operations.IAnonymousFunctionOperation":
@@ -85,9 +75,14 @@ namespace Semmle.Extraction.CSharp.Reflector
                 case "Microsoft.CodeAnalysis.AssemblyIdentityComparer":
                 case "Microsoft.CodeAnalysis.MetadataReferenceResolver":
                 case "Microsoft.CodeAnalysis.IOperation":
-                    t.Enabled = false;
+                    return true;
                     break;
             }
+            return false;
+        }
+
+        public void CustomizeType(IReflectedType t)
+        {
         }
 
         public new bool Equals(object x, object y)
@@ -114,18 +109,27 @@ namespace Semmle.Extraction.CSharp.Reflector
         {
             switch(p.GetFullName())
             {
-                case "Microsoft.CodeAnalysis.AssemblyIdentity.PublicKeyToken":
-                case "Microsoft.CodeAnalysis.AssemblyIdentity.PublicKey":
-                case "Microsoft.CodeAnalysis.CompilationOptions.CryptoPublicKey":
-                    // Do not output these properties at all
-                    p.Enabled = false;
-                    return;
                 case "Microsoft.CodeAnalysis.AssemblyIdentity.Version":
                     // Store this field inline.
-                    p.Nullable = false;
+                    // p.IsNullable = false;
                     return;
             }
         }
+
+        public bool Exclude(MemberInfo info)
+        {
+            switch (info.Name)
+            {
+                case "PublicKeyToken":
+                case "PublicKey":
+                case "CryptoPublicKey":
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        // public void Exclude()
 
         Microsoft.CodeAnalysis.AttributeData d;
         Microsoft.CodeAnalysis.Operations.IAnonymousFunctionOperation op;

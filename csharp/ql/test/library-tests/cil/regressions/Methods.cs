@@ -4,7 +4,7 @@
  * 2 constructed methods of F<T>.
  */
 
-// semmle-extractor-options: --cil
+// semmle-extractor-options: --cil -out:Methods2.dll
 
 namespace Methods
 {

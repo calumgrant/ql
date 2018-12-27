@@ -204,17 +204,6 @@ namespace Semmle.Extraction.CSharp
 
         CommonOptions options;
 
-        static bool FileIsUpToDate(string src, string dest)
-        {
-            return File.Exists(dest) &&
-                File.GetLastWriteTime(dest) >= File.GetLastWriteTime(src);
-        }
-
-        bool FileIsCached(string src, string dest)
-        {
-            return options.Cache && FileIsUpToDate(src, dest);
-        }
-
         /// <summary>
         ///     Extract an assembly to a new trap file.
         ///     If the trap file exists, skip extraction to avoid duplicating
@@ -230,11 +219,11 @@ namespace Semmle.Extraction.CSharp
 
                 var assemblyPath = r.FilePath;
                 var projectLayout = layout.LookupProjectOrDefault(assemblyPath);
-                using (var trapWriter = projectLayout.CreateTrapWriter(Logger, assemblyPath, true))
+                using (var trapWriter = projectLayout.CreateTrapWriter(Logger, assemblyPath, "cs", true))
                 {
-                    var skipExtraction = FileIsCached(assemblyPath, trapWriter.TrapFile);
+                    var upToDate = !options.Cache || trapWriter.UpToDate;
 
-                    if (!skipExtraction)
+                    if (!upToDate)
                     {
                         /* Note on parallel builds:
                          *
@@ -269,7 +258,7 @@ namespace Semmle.Extraction.CSharp
                         }
                     }
 
-                    ReportProgress(assemblyPath, trapWriter.TrapFile, stopwatch.Elapsed, skipExtraction ? AnalysisAction.UpToDate : AnalysisAction.Extracted);
+                    ReportProgress(assemblyPath, trapWriter.TrapFile, stopwatch.Elapsed, upToDate ? AnalysisAction.UpToDate : AnalysisAction.Extracted);
                 }
             }
             catch (Exception ex)  // lgtm[cs/catch-of-all-exceptions]
@@ -332,16 +321,14 @@ namespace Semmle.Extraction.CSharp
 
                 var projectLayout = layout.LookupProjectOrNull(sourcePath);
                 bool excluded = projectLayout == null;
-                string trapPath = excluded ? "" : projectLayout.GetTrapPath(Logger, sourcePath);
                 bool upToDate = false;
 
                 if (!excluded)
                 {
                     // compilation.Clone() is used to allow symbols to be garbage collected.
-                    using (var trapWriter = projectLayout.CreateTrapWriter(Logger, sourcePath, false))
+                    using (var trapWriter = projectLayout.CreateTrapWriter(Logger, sourcePath, compilation.Assembly.ToString(), false))
                     {
-                        upToDate = options.Fast && FileIsUpToDate(sourcePath, trapWriter.TrapFile);
-
+                        upToDate = !options.Cache || trapWriter.UpToDate;
                         if (!upToDate)
                         {
                             Context cx = new Context(extractor, compilation.Clone(), trapWriter, new SourceScope(tree));
@@ -352,7 +339,7 @@ namespace Semmle.Extraction.CSharp
                     }
                 }
 
-                ReportProgress(sourcePath, trapPath, stopwatch.Elapsed, excluded ? AnalysisAction.Excluded : upToDate ? AnalysisAction.UpToDate : AnalysisAction.Extracted);
+                ReportProgress(sourcePath, sourcePath, stopwatch.Elapsed, excluded ? AnalysisAction.Excluded : upToDate ? AnalysisAction.UpToDate : AnalysisAction.Extracted);
             }
             catch (Exception ex)  // lgtm[cs/catch-of-all-exceptions]
             {
@@ -417,7 +404,7 @@ namespace Semmle.Extraction.CSharp
                 Logger.Log(Severity.Info, $"  Arguments to Roslyn: {string.Join(' ', roslynArgs)}");
 
                 // Create a new file in the log folder.
-                var argsFile = Path.Combine(Extractor.GetCSharpLogDirectory(), $"csharp.{Path.GetRandomFileName()}.txt");
+                var argsFile = Path.Combine(Extractor.GetCSharpLogDirectory(), $"csharp-{Process.GetCurrentProcess().Id}.txt");
 
                 if (roslynArgs.ArchiveCommandLine(argsFile))
                     Logger.Log(Severity.Info, $"  Arguments have been written to {argsFile}");
@@ -434,6 +421,33 @@ namespace Semmle.Extraction.CSharp
                 {
                     Logger.Log(Severity.Info, "  Resolved reference {0}", reference.Display);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Create a dummy trap file for the output file.
+        /// This is to prevent the extractor from re-extracting the assembly contents,
+        /// which would be redundant since we already extracted the source code.
+        /// </summary>
+        /// <param name="outputFile">The path of the output assembly dll/exe.</param>
+        /// <param name="options">Extraction options used to modify the hash.</param>
+        public void TouchOutputTrapFile(string outputFile, string options)
+        {
+            if (File.Exists(outputFile))
+            {
+                // The output file exists, so we construct a trap file for the output file.
+                // This has no contents, but prevents the extractor from re-extracting the file.
+                var project = layout.LookupProjectOrDefault(outputFile);
+                using (var trapWriter = project.CreateTrapWriter(Logger, outputFile, options, true))
+                    trapWriter.WriteEmptyFile();
+            }
+            else
+            {
+                // If this happens, it means that we expected the output file (exe/dll) was not found.
+                // This might mean that our calculation of the output path was incorrect,
+                // that the compilation failed, that the compiler hasn't been run (e.g. in tests),
+                // or that the file got deleted.
+                Logger.Log(Severity.Info, $"Expected output file {outputFile} does not exist.");
             }
         }
     }

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Semmle.Util;
@@ -27,7 +28,6 @@ namespace Semmle.Extraction
         #endregion
 
         //#################### PRIVATE VARIABLES ####################
-        #region
 
         /// <summary>
         /// The location of the src_archive directory.
@@ -35,12 +35,7 @@ namespace Semmle.Extraction
         private readonly string archive;
         private static readonly Encoding UTF8 = new UTF8Encoding(false);
 
-        private readonly bool discardDuplicates;
-
-        #endregion
-
         //#################### PROPERTIES ####################
-        #region
 
         public int IdCounter { get; set; } = 1;
 
@@ -51,15 +46,15 @@ namespace Semmle.Extraction
 
         readonly ILogger Logger;
 
-        #endregion
-
         //#################### CONSTRUCTORS ####################
-        #region
 
-        public TrapWriter(ILogger logger, string outputfile, string trap, string archive, bool discardDuplicates)
+        public TrapWriter(ILogger logger, string filePath, string trap, string archive, string options, bool hashFileContents)
         {
             Logger = logger;
-            TrapFile = TrapPath(Logger, trap, outputfile);
+
+            TrapFile = TrapPath(trap, filePath, options, hashFileContents);
+
+            UpToDate = File.Exists(TrapFile);
 
             WriterLazy = new Lazy<StreamWriter>(() =>
             {
@@ -86,8 +81,12 @@ namespace Semmle.Extraction
             });
             BuilderLazy = new Lazy<TrapBuilder>(() => new TrapBuilder(WriterLazy.Value));
             this.archive = archive;
-            this.discardDuplicates = discardDuplicates;
         }
+
+        /// <summary>
+        /// True if the trap file exists already.
+        /// </summary>
+        public bool UpToDate { get; }
 
         /// <summary>
         /// The output filename of the trap.
@@ -95,10 +94,7 @@ namespace Semmle.Extraction
         public readonly string TrapFile;
         string tmpFile;     // The temporary file which is moved to trapFile once written.
 
-        #endregion
-
         //#################### PUBLIC METHODS ####################
-        #region
 
         /// <summary>
         /// Adds the specified input file to the source archive. It may end up in either the normal or long path area
@@ -157,10 +153,17 @@ namespace Semmle.Extraction
         }
 
         /// <summary>
+        /// Creates an empty trap file.
+        /// </summary>
+        public void WriteEmptyFile()
+        {
+            // A empty trap file incorrectly generates a zero-length .gz file.
+            // Add some content to prevent this.
+            WriterLazy.Value.WriteLine("// Empty file");
+        }
+
+        /// <summary>
         /// Close the trap file, and move it to the right place in the trap directory.
-        /// If the file exists already, rename it to allow the new file (ending .trap.gz)
-        /// to sit alongside the old file (except if <paramref name="discardDuplicates"/> is true,
-        /// in which case only the existing file is kept).
         /// </summary>
         public void Dispose()
         {
@@ -172,21 +175,6 @@ namespace Semmle.Extraction
                     if (TryMove(tmpFile, TrapFile))
                         return;
 
-                    if (discardDuplicates)
-                    {
-                        FileUtils.TryDelete(tmpFile);
-                        return;
-                    }
-
-                    var existingHash = ComputeHash(TrapFile);
-                    var hash = ComputeHash(tmpFile);
-                    if (existingHash != hash)
-                    {
-                        var root = TrapFile.Substring(0, TrapFile.Length - 8); // Remove trailing ".trap.gz"
-                        if (TryMove(tmpFile, $"{root}-{hash}.trap.gz"))
-                            return;
-                    }
-                    Logger.Log(Severity.Info, "Identical trap file for {0} already exists", TrapFile);
                     FileUtils.TryDelete(tmpFile);
                 }
             }
@@ -201,26 +189,7 @@ namespace Semmle.Extraction
             emitter.EmitToTrapBuilder(Builder);
         }
 
-        #endregion
-
         //#################### PRIVATE METHODS ####################
-        #region
-
-        /// <summary>
-        /// Computes the hash of <paramref name="filePath"/>.
-        /// </summary>
-        static string ComputeHash(string filePath)
-        {
-            using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-            using (var shaAlg = new SHA256Managed())
-            {
-                var sha = shaAlg.ComputeHash(fileStream);
-                var hex = new StringBuilder(sha.Length * 2);
-                foreach (var b in sha)
-                    hex.AppendFormat("{0:x2}", b);
-                return hex.ToString();
-            }
-        }
 
         class TrapBuilder : ITrapBuilder
         {
@@ -311,15 +280,40 @@ namespace Semmle.Extraction
             return nested;
         }
 
-        public static string TrapPath(ILogger logger, string folder, string filename)
+        public static string TrapPath(string folder, string filename, string options, bool hashFileContents)
         {
-            filename = Path.GetFullPath(filename) + ".trap.gz";
             if (string.IsNullOrEmpty(folder))
                 folder = Directory.GetCurrentDirectory();
-
-            return NestPaths(logger, folder, filename, InnerPathComputation.ABSOLUTE); ;
+            return Path.Combine(folder, GetTrapName(filename, options, hashFileContents));
         }
 
-        #endregion
+        private static string GetTrapName(string filePath, string options, bool hashFileContents)
+        {
+            var filename = new StringBuilder();
+            filename.Append(Path.GetFileNameWithoutExtension(filePath));
+            filename.Append('-');
+            using (var shaAlg = new SHA256Managed())
+            {
+                var sha1 = shaAlg.ComputeHash(Encoding.ASCII.GetBytes(options));
+                byte[] sha2;
+                if (hashFileContents)
+                {
+                    // Compute a hash of the file contents and the options
+                    using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    {
+                        sha2 = shaAlg.ComputeHash(fileStream);
+                    }
+                }
+                else
+                {
+                    sha2 = shaAlg.ComputeHash(Encoding.ASCII.GetBytes(filePath));
+                }
+
+                foreach (var b in sha1.Zip(sha2, (a, b) => a ^ b).Take(10))
+                    filename.AppendFormat("{0:x2}", b);
+            }
+            filename.Append(".trap.gz");
+            return filename.ToString();
+        }
     }
 }

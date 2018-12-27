@@ -155,6 +155,10 @@ namespace Semmle.Extraction.CSharp
                         analyser.AnalyseTree(tree);
                     }
 
+                    string outputFile = Path.Combine(compilerArguments.OutputDirectory, compilerArguments.OutputFileName);
+                    analyser.TouchOutputTrapFile(outputFile, "cs");
+                    analyser.TouchOutputTrapFile(outputFile, "cil");
+
                     sw.Stop();
                     logger.Log(Severity.Info, "  Models constructed in {0}", sw.Elapsed);
 

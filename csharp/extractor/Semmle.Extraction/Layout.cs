@@ -54,14 +54,16 @@ namespace Semmle.Extraction
             /// </summary>
             /// <param name="srcFile">The source file.</param>
             /// <returns>The full filepath of the trap file.</returns>
-            public string GetTrapPath(ILogger logger, string srcFile) => TrapWriter.TrapPath(logger, TRAP_FOLDER, srcFile);
+            public string GetTrapPath(string srcFile, string options, bool hashFileContents) =>
+                TrapWriter.TrapPath(TRAP_FOLDER, srcFile, options, hashFileContents);
 
             /// <summary>
             /// Creates a trap writer for a given source/assembly file.
             /// </summary>
             /// <param name="srcFile">The source file.</param>
             /// <returns>A newly created TrapWriter.</returns>
-            public TrapWriter CreateTrapWriter(ILogger logger, string srcFile, bool discardDuplicates) => new TrapWriter(logger, srcFile, TRAP_FOLDER, SOURCE_ARCHIVE, discardDuplicates);
+            public TrapWriter CreateTrapWriter(ILogger logger, string srcFile, string options, bool hashFileContents) =>
+                new TrapWriter(logger, srcFile, TRAP_FOLDER, SOURCE_ARCHIVE, options, hashFileContents);
         }
 
         readonly SubProject DefaultProject;

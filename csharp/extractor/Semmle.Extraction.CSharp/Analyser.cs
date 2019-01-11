@@ -2,13 +2,10 @@ using System;
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.Diagnostics;
 using System.IO;
 using System.Linq;
 using Semmle.Extraction.CSharp.Populators;
-using System.Runtime.InteropServices;
 using System.Collections.Generic;
-using System.Text;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using Semmle.Util.Logging;
@@ -16,59 +13,6 @@ using Semmle.Util;
 
 namespace Semmle.Extraction.CSharp
 {
-    public static class DiagnosticIds
-    {
-        // Stateless analyzer IDs.
-        public const string SymbolAnalyzerRuleId = "CSS0001";
-        public const string SyntaxNodeAnalyzerRuleId = "CSS0002";
-        public const string SyntaxTreeAnalyzerRuleId = "CSS0003";
-        public const string SemanticModelAnalyzerRuleId = "CSS0004";
-        public const string CodeBlockAnalyzerRuleId = "CSS0005";
-        public const string CompilationAnalyzerRuleId = "CSS0006";
-        public const string IOperationAnalyzerRuleId = "CSS0007";
-
-        // Stateful analyzer IDs.
-        public const string CodeBlockStartedAnalyzerRuleId = "CSS0101";
-        public const string CompilationStartedAnalyzerRuleId = "CSS0102";
-        public const string CompilationStartedAnalyzerWithCompilationWideAnalysisRuleId = "CSS0103";
-
-        // Additional File analyzer IDs.
-        public const string SimpleAdditionalFileAnalyzerRuleId = "CSS0201";
-        public const string XmlAdditionalFileAnalyzerRuleId = "CSS0202";
-    }
-
-    public static class DiagnosticCategories
-    {
-        public const string Stateless = "SampleStatelessAnalyzers";
-        public const string Stateful = "SampleStatefulAnalyzers";
-        public const string AdditionalFile = "SampleAdditionalFileAnalyzers";
-    }
-
-    [DiagnosticAnalyzer(LanguageNames.CSharp)]
-    public class TestAnalyser : DiagnosticAnalyzer
-    {
-        private const string Title = "Secure types must not implement interfaces with unsecure methods";
-        public const string MessageFormat = "Type '{0}' is a secure type as it implements interface '{1}', but it also implements interface '{2}' which has unsecure method(s).";
-        private const string Description = "Secure types must not implement interfaces with unsecure methods.";
-
-        internal static DiagnosticDescriptor Rule =
-            new DiagnosticDescriptor(
-                DiagnosticIds.CompilationStartedAnalyzerWithCompilationWideAnalysisRuleId,
-                Title,
-                MessageFormat,
-                DiagnosticCategories.Stateful,
-                DiagnosticSeverity.Warning,
-                isEnabledByDefault: true,
-                description: Description);
-
-        public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-            ImmutableArray.Create(Rule);
-
-        public override void Initialize(AnalysisContext context)
-        {
-        }
-    }
-
     /// <summary>
     /// Encapsulates a C# analysis task.
     /// </summary>
@@ -170,6 +114,11 @@ namespace Semmle.Extraction.CSharp
             this.options = options;
             LogDiagnostics(null);
             SetReferencePaths();
+        }
+
+        public void InitializeFromAnalyser(CSharpCompilation compilationIn, CommonOptions options)
+        {
+
         }
 
         readonly HashSet<string> errorsToIgnore = new HashSet<string>
@@ -434,7 +383,7 @@ namespace Semmle.Extraction.CSharp
             else
                 Logger.Log(Severity.Info, "EXTRACTION SUCCEEDED in {0}", stopWatch.Elapsed);
 
-            Logger.Dispose();
+            // Logger.Dispose();
         }
 
         /// <summary>

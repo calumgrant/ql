@@ -23,30 +23,6 @@ namespace Semmle.Extraction.CSharp
             Failed      // Trap could not be generated
         }
 
-        class LogProgressMonitor : IProgressMonitor
-        {
-            readonly ILogger Logger;
-
-            public LogProgressMonitor(ILogger logger)
-            {
-                Logger = logger;
-            }
-
-            public void Analysed(int item, int total, string source, string output, TimeSpan time, AnalysisAction action)
-            {
-                if (action != AnalysisAction.UpToDate)
-                {
-                    Logger.Log(Severity.Info, "  {0} ({1})", source,
-                        action == AnalysisAction.Extracted ? time.ToString() : action == AnalysisAction.Excluded ? "excluded" : "up to date");
-                }
-            }
-
-            public void MissingNamespace(string @namespace) { }
-
-            public void MissingSummary(int types, int namespaces) { }
-
-            public void MissingType(string type) { }
-        }
 
         /// <summary>
         /// Command-line driver for the extractor.
@@ -387,5 +363,30 @@ namespace Semmle.Extraction.CSharp
             }
             return Directory.GetCurrentDirectory();
         }
+    }
+
+    class LogProgressMonitor : IProgressMonitor
+    {
+        readonly ILogger Logger;
+
+        public LogProgressMonitor(ILogger logger)
+        {
+            Logger = logger;
+        }
+
+        public void Analysed(int item, int total, string source, string output, TimeSpan time, AnalysisAction action)
+        {
+            if (action != AnalysisAction.UpToDate)
+            {
+                Logger.Log(Severity.Info, "  {0} ({1})", source,
+                    action == AnalysisAction.Extracted ? time.ToString() : action == AnalysisAction.Excluded ? "excluded" : "up to date");
+            }
+        }
+
+        public void MissingNamespace(string @namespace) { }
+
+        public void MissingSummary(int types, int namespaces) { }
+
+        public void MissingType(string type) { }
     }
 }

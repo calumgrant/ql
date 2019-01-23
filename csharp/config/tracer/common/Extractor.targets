@@ -1,0 +1,5 @@
+<Project>
+    <ItemGroup>
+        <Analyzer Include="$(SEMMLE_PLATFORM_TOOLS)\csharp\Semmle.Extraction.CSharp.dll"/>
+    </ItemGroup>
+</Project>

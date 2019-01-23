@@ -83,6 +83,12 @@ namespace Semmle.Extraction.CSharp
                         return ExitCode.Failed;
                     }
 
+                    if(compilerArguments.AnalyzerReferences.Any(ar => ar.FilePath.EndsWith("Semmle.Extraction.CSharp.dll")))
+                    {
+                        logger.Log(Severity.Info, "  Skipping extraction since using the analyzer");
+                        return ExitCode.Ok;
+                    }
+
                     var referenceTasks = ResolveReferences(compilerArguments, analyser, canonicalPathCache, references);
 
                     var syntaxTrees = new List<SyntaxTree>();

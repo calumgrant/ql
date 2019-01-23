@@ -1,4 +1,4 @@
-<Project>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <ItemGroup>
         <Analyzer Include="$(SEMMLE_PLATFORM_TOOLS)\csharp\Semmle.Extraction.CSharp.dll"/>
     </ItemGroup>

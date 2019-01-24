@@ -6,6 +6,7 @@
  */
 import csharp
 import dotnet
+import cil
 
 newtype TPortal = 
   TSummary(Summary c)
@@ -108,6 +109,29 @@ class CSharpThisReturn extends Summary, Callable {
     and
     sink = getPortal().getReturn()
   }
+}
+
+class CilParamReturn extends Summary, CIL::Callable {
+  CIL::Parameter source;
+  
+  CilParamReturn() {
+    this.canReturn(source.getARead()) // !! Use dataflow
+  }
+
+  override predicate hasReturn(Portal portal) { portal = getPortal() }
+
+  override predicate hasParameter(Portal portal, int param) {
+    portal = getPortal() and param = source.getIndex()
+  }
+
+  override predicate hasFlow(Portal src, Portal sink, Taint taint) {
+    taint = any(Untainted t)
+    and
+    src = getPortal().getParameter(source.getIndex())
+    and
+    sink = getPortal().getReturn()
+  }
+  
 }
 
 from Portal p

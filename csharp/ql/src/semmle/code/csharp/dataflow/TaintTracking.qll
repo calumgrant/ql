@@ -252,4 +252,6 @@ module TaintTracking {
     import Cached
   }
   private import Internal
+
+  predicate localAdditionalTaintStep2 = Internal::Cached::localAdditionalTaintStep/2;
 }

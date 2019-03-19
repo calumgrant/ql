@@ -143,6 +143,7 @@ namespace Semmle.Extraction
                 if (File.Exists(destFile))
                     return false;
 
+                Directory.CreateDirectory(Path.GetDirectoryName(destFile));
                 File.Move(sourceFile, destFile);
                 return true;
             }
@@ -290,8 +291,6 @@ namespace Semmle.Extraction
         private static string GetTrapName(string filePath, string options, bool hashFileContents)
         {
             var filename = new StringBuilder();
-            filename.Append(Path.GetFileNameWithoutExtension(filePath));
-            filename.Append('-');
             using (var shaAlg = new SHA256Managed())
             {
                 var sha1 = shaAlg.ComputeHash(Encoding.ASCII.GetBytes(options));
@@ -309,10 +308,16 @@ namespace Semmle.Extraction
                     sha2 = shaAlg.ComputeHash(Encoding.ASCII.GetBytes(filePath));
                 }
 
+                foreach (var b in sha1.Zip(sha2, (a, b) => a ^ b).Take(1))
+                    filename.AppendFormat("{0:x2}", b);
+                filename.Append(Path.DirectorySeparatorChar);
+                filename.Append(Path.GetFileNameWithoutExtension(filePath));
+                filename.Append('-');
+
                 foreach (var b in sha1.Zip(sha2, (a, b) => a ^ b).Take(10))
                     filename.AppendFormat("{0:x2}", b);
+                filename.Append(".trap.gz");
             }
-            filename.Append(".trap.gz");
             return filename.ToString();
         }
     }

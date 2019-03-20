@@ -14,6 +14,50 @@ namespace Semmle.Extraction
         void EmitToTrapBuilder(ITrapBuilder tb);
     }
 
+    class TrapCache
+    {
+        private string CacheDirectory { get; }
+
+        public TrapCache(string directory)
+        {
+            CacheDirectory = directory;
+        }
+
+        /// <summary>
+        /// Try to retrieve the file from the cache.
+        /// </summary>
+        /// <param name="trapDir">The directory to </param>
+        /// <param name="filename"></param>
+        /// <returns></returns>
+        public bool CopyFromCache(string trapDir, string filename)
+        {
+            var source = Path.Combine(CacheDirectory, filename);
+
+            if (!File.Exists(source))
+                return false;
+
+            var dest = Path.Combine(trapDir, filename);
+            if (!File.Exists(dest))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(dest));
+                File.Copy(source, dest);
+            }
+
+            return true;
+        }
+
+        public void CopyToCache(string trapDir, string filename)
+        {
+            var source = Path.Combine(trapDir, filename);
+            var dest = Path.Combine(CacheDirectory, filename);
+            if (!File.Exists(dest))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(dest));
+                File.Move(source, dest);
+            }
+        }
+    }
+
     public sealed class TrapWriter : IDisposable
     {
         //#################### ENUMERATIONS ####################
@@ -48,17 +92,47 @@ namespace Semmle.Extraction
 
         //#################### CONSTRUCTORS ####################
 
-        public TrapWriter(ILogger logger, string filePath, string trap, string archive, string options, bool hashFileContents)
+        readonly string CacheDir;
+        readonly string TrapDir;
+        readonly string RelativeTrapname;
+
+        readonly TrapCache TrapCache;
+        readonly bool CacheThisFile;
+
+        public TrapWriter(ILogger logger, string filePath, string trapFolder, string archive, string options, bool hashFileContents, bool cache)
         {
+            CacheThisFile = cache;
+            if (CacheThisFile)
+            {
+                CacheDir = @"W:\Temp\Cache";  // !!
+                TrapCache = new TrapCache(CacheDir);
+            }
+
+            if (string.IsNullOrEmpty(trapFolder))
+            {
+                trapFolder = Path.Combine(Directory.GetCurrentDirectory(), "trap");
+                Directory.CreateDirectory(trapFolder);
+            }
+
+            TrapDir = trapFolder;
+
             Logger = logger;
 
-            TrapFile = TrapPath(trap, filePath, options, hashFileContents);
+            RelativeTrapname = GetTrapName(filePath, options, hashFileContents);
+            TrapFile = Path.Combine(TrapDir, RelativeTrapname);
 
             UpToDate = File.Exists(TrapFile);
 
+            if(!UpToDate && CacheThisFile)
+            {
+                // Attempt to fetch the file from the cache.
+                if (TrapCache.CopyFromCache(trapFolder, RelativeTrapname))
+                    UpToDate = true;
+            }
+
             WriterLazy = new Lazy<StreamWriter>(() =>
             {
-                var tempPath = trap ?? Path.GetTempPath();
+                var tempPath = trapFolder ?? Path.GetTempPath();
 
                 do
                 {
@@ -173,8 +247,13 @@ namespace Semmle.Extraction
                 if (WriterLazy.IsValueCreated)
                 {
                     WriterLazy.Value.Close();
+
                     if (TryMove(tmpFile, TrapFile))
+                    {
+                        if (CacheThisFile)
+                            TrapCache.CopyToCache(TrapDir, RelativeTrapname);
                         return;
+                    }
 
                     FileUtils.TryDelete(tmpFile);
                 }
@@ -284,11 +363,11 @@ namespace Semmle.Extraction
         public static string TrapPath(string folder, string filename, string options, bool hashFileContents)
         {
             if (string.IsNullOrEmpty(folder))
-                folder = Directory.GetCurrentDirectory();
+                folder = Path.Combine(Directory.GetCurrentDirectory(), "trap");
             return Path.Combine(folder, GetTrapName(filename, options, hashFileContents));
         }
 
-        private static string GetTrapName(string filePath, string options, bool hashFileContents)
+        public static string GetTrapName(string filePath, string options, bool hashFileContents)
         {
             var filename = new StringBuilder();
             using (var shaAlg = new SHA256Managed())

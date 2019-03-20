@@ -31,7 +31,7 @@ namespace Semmle.Extraction.Tests
 
             // Test trap file generation
             var trapwriterFilename = project.GetTrapPath("foo.cs", "", false);
-            using (var trapwriter = project.CreateTrapWriter(Logger, "foo.cs", "", false))
+            using (var trapwriter = project.CreateTrapWriter(Logger, "foo.cs", "", false, false))
             {
                 trapwriter.Emit("1=*");
             }
@@ -74,7 +74,7 @@ namespace Semmle.Extraction.Tests
                 trapwriterFilename);
 
             // Test the source archive
-            var trapWriter = project.CreateTrapWriter(Logger, "bar.cs", "", false);
+            var trapWriter = project.CreateTrapWriter(Logger, "bar.cs", "", false, false);
             trapWriter.Archive("layout.txt", System.Text.Encoding.ASCII);
             var writtenFile = TrapWriter.NestPaths(Logger, Path.GetFullPath("snapshot\\archive"), "layout.txt", TrapWriter.InnerPathComputation.ABSOLUTE);
             Assert.True(File.Exists(writtenFile));

@@ -62,8 +62,8 @@ namespace Semmle.Extraction
             /// </summary>
             /// <param name="srcFile">The source file.</param>
             /// <returns>A newly created TrapWriter.</returns>
-            public TrapWriter CreateTrapWriter(ILogger logger, string srcFile, string options, bool hashFileContents) =>
-                new TrapWriter(logger, srcFile, TRAP_FOLDER, SOURCE_ARCHIVE, options, hashFileContents);
+            public TrapWriter CreateTrapWriter(ILogger logger, string srcFile, string options, bool hashFileContents, bool cache) =>
+                new TrapWriter(logger, srcFile, TRAP_FOLDER, SOURCE_ARCHIVE, options, hashFileContents, cache);
         }
 
         readonly SubProject DefaultProject;

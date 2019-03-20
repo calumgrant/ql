@@ -219,7 +219,7 @@ namespace Semmle.Extraction.CSharp
 
                 var assemblyPath = r.FilePath;
                 var projectLayout = layout.LookupProjectOrDefault(assemblyPath);
-                using (var trapWriter = projectLayout.CreateTrapWriter(Logger, assemblyPath, "cs", true))
+                using (var trapWriter = projectLayout.CreateTrapWriter(Logger, assemblyPath, "cs", true, false))
                 {
                     var upToDate = !options.Cache || trapWriter.UpToDate;
 
@@ -326,7 +326,7 @@ namespace Semmle.Extraction.CSharp
                 if (!excluded)
                 {
                     // compilation.Clone() is used to allow symbols to be garbage collected.
-                    using (var trapWriter = projectLayout.CreateTrapWriter(Logger, sourcePath, compilation.Assembly.ToString(), false))
+                    using (var trapWriter = projectLayout.CreateTrapWriter(Logger, sourcePath, compilation.Assembly.ToString(), false, false))
                     {
                         upToDate = !options.Cache || trapWriter.UpToDate;
                         if (!upToDate)
@@ -438,7 +438,7 @@ namespace Semmle.Extraction.CSharp
                 // The output file exists, so we construct a trap file for the output file.
                 // This has no contents, but prevents the extractor from re-extracting the file.
                 var project = layout.LookupProjectOrDefault(outputFile);
-                using (var trapWriter = project.CreateTrapWriter(Logger, outputFile, options, true))
+                using (var trapWriter = project.CreateTrapWriter(Logger, outputFile, options, true, false))
                     trapWriter.WriteEmptyFile();
             }
             else

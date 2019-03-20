@@ -132,7 +132,7 @@ namespace Semmle.Extraction.CIL.Entities
             {
                 var extractor = new Extractor(false, assemblyPath, logger);
                 var project = layout.LookupProjectOrDefault(assemblyPath);
-                using (var trapWriter = project.CreateTrapWriter(logger, assemblyPath, "cil", true))
+                using (var trapWriter = project.CreateTrapWriter(logger, assemblyPath, "cil", true, true))
                 {
                     trapFile = trapWriter.TrapFile;
                     if (nocache || !System.IO.File.Exists(trapFile))

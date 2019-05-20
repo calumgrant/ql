@@ -126,7 +126,7 @@ class Patterns
         var r = s switch
         {
             MyStruct { X: int x } when x > 2 => 0,
-            MyStruct { X: 10 } ms => 1,
+            MyStruct (1, 2) { X: 10 } ms => 1,
             (1, 2) => 2,
             var (x, _) => 3
         };

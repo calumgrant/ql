@@ -41,10 +41,11 @@ query predicate discards(DiscardExpr discard) { any() }
 
 query predicate isExprs(IsExpr is) { any() }
 
-query predicate isRecursivePatternExpr(IsRecursivePatternExpr expr) { any() }
+query predicate isRecursivePatternExpr(IsPatternExpr expr) { expr.hasRecursivePattern() }
 
 query predicate isRecursivePatternExprWithDecl(
-  IsRecursivePatternExpr expr, LocalVariableDeclExpr decl
+  IsPatternExpr expr, LocalVariableDeclExpr decl
 ) {
   decl = expr.getVariableDeclExpr()
+  and expr.hasRecursivePattern()
 }

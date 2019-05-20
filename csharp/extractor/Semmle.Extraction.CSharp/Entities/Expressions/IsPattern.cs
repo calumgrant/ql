@@ -31,16 +31,16 @@ namespace Semmle.Extraction.CSharp.Entities.Expressions
                     return new RecursivePattern(cx, recPattern, parent, child, false);
 
                 case VarPatternSyntax varPattern:
-                    switch(varPattern.Designation)
+                    switch (varPattern.Designation)
                     {
                         case ParenthesizedVariableDesignationSyntax parDesignation:
                             return VariableDeclaration.CreateParenthesized(cx, varPattern, parDesignation, parent, child);
                         case SingleVariableDesignationSyntax varDesignation:
-                            if (cx.Model(syntax).GetDeclaredSymbol(varDesignation) is ILocalSymbol symbol2)
+                            if (cx.Model(syntax).GetDeclaredSymbol(varDesignation) is ILocalSymbol symbol)
                             {
-                                var type = Type.Create(cx, symbol2.Type);
+                                var type = Type.Create(cx, symbol.Type);
 
-                                return VariableDeclaration.Create(cx, symbol2, type, cx.Create(syntax.GetLocation()), cx.Create(varDesignation.GetLocation()), false, parent, child);
+                                return VariableDeclaration.Create(cx, symbol, type, cx.Create(syntax.GetLocation()), cx.Create(varDesignation.GetLocation()), false, parent, child);
                             }
                             else
                             {
@@ -98,10 +98,10 @@ namespace Semmle.Extraction.CSharp.Entities.Expressions
         public RecursivePattern(Context cx, RecursivePatternSyntax syntax, IExpressionParentEntity parent, int child, bool isTopLevel) :
             base(new ExpressionInfo(cx, Type.Create(cx, null), cx.Create(syntax.GetLocation()), ExprKind.RECURSIVE_PATTERN, parent, child, false, null))
         {
-            if(!isTopLevel)
+            if (!isTopLevel)
             {
                 // Extract the type access
-                if(syntax.Type is TypeSyntax t)
+                if (syntax.Type is TypeSyntax t)
                     Expressions.TypeAccess.Create(cx, t, this, 1);
 
                 // Extract the local variable declaration

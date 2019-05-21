@@ -261,7 +261,7 @@ class IsExpr extends Expr, @is_expr {
   Expr getExpr() { result = this.getChild(0) }
 
   override string toString() { result = "... is ..." }
-  
+
   /**
    * Gets the recursive pattern of this `is` expression, if any. For example,
    * `{ Length: 5 }` in `x is string { Length: 5 } s`.
@@ -396,7 +396,7 @@ class SwitchCaseExpr extends Expr, @switch_case_expr {
   /** Holds if this case expression matches all expressions. */
   predicate matchesAll() {
     // Note: There may be other cases that are not yet handled by this predicate.
-    // For example, `(1,2) switch { (int x, int y) => x+y }`
+    // For example, `(1, 2) switch { (int x, int y) => x+y }`
     // should match all cases due to the type of the expression.
     this.getPattern() instanceof DiscardExpr
   }

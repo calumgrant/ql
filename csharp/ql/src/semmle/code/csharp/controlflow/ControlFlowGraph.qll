@@ -1170,7 +1170,7 @@ module ControlFlow {
       ) {
         c.isValidFor(result) and
         (
-          result = rpc.getTypeAccess() and
+          result = rpc.(TypeCase).getTypeAccess() and
           c = any(MatchingCompletion mc | not mc.isMatch())
           or
           result = last(rpc.getCondition(), _) and
@@ -1341,7 +1341,7 @@ module ControlFlow {
       private ControlFlowElement lastRecursivePatternCaseVariableDeclExpr(
         RecursivePatternCase tc, Completion c
       ) {
-        result = last(tc.getVariableDeclExpr(), c)
+        result = last(tc.(TypeCase).getVariableDeclExpr(), c)
       }
 
       pragma[nomagic]
@@ -1716,6 +1716,7 @@ module ControlFlow {
           c instanceof SimpleCompletion
           or
           cfe = tc.getTypeAccess() and
+          not tc instanceof RecursivePatternCase and
           c.isValidFor(cfe) and
           c = any(MatchingCompletion mc |
               if mc.isMatch()
@@ -1756,17 +1757,17 @@ module ControlFlow {
         or
         exists(RecursivePatternCase tc |
           cfe = tc and
-          result = tc.getTypeAccess() and
+          result = tc.(TypeCase).getTypeAccess() and
           c instanceof SimpleCompletion
           or
           // Preorder: From the case stmt:
-          not exists(tc.getTypeAccess()) and
+          not exists(tc.(TypeCase).getTypeAccess()) and
           cfe = tc and
           result = first(tc.getRecursivePattern()) and
           c instanceof SimpleCompletion
           or
           // Flow from type test (if exists) to recursive pattern
-          cfe = tc.getTypeAccess() and
+          cfe = tc.(TypeCase).getTypeAccess() and
           result = first(tc.getRecursivePattern()) and
           c.isValidFor(cfe) and
           c = any(MatchingCompletion mc | mc.isMatch())
@@ -1780,10 +1781,10 @@ module ControlFlow {
           c = any(MatchingCompletion mc |
               if mc.isMatch()
               then
-                if exists(tc.getVariableDeclExpr())
+                if exists(tc.(TypeCase).getVariableDeclExpr())
                 then
                   // Flow from type test to first element of variable declaration
-                  result = first(tc.getVariableDeclExpr())
+                  result = first(tc.(TypeCase).getVariableDeclExpr())
                 else
                   if exists(tc.getCondition())
                   then
@@ -2076,8 +2077,6 @@ module ControlFlow {
           c = any(MatchingCompletion m | not m.isMatch()) and
           (
             result = last(cfe.(ConstCase).getExpr(), _)
-            or
-            result = cfe.(RecursivePatternCase).getTypeAccess()
             or
             result = last(cfe.(RecursivePatternCase).getRecursivePattern(), c)
             or

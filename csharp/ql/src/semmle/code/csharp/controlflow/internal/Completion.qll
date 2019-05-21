@@ -417,9 +417,7 @@ predicate switchMatching(SwitchStmt ss, CaseStmt cs, ControlFlowElement cfe) {
     or
     cfe = cs.(TypeCase).getTypeAccess() // use type access to represent the type test
     or
-    cfe = cs.(RecursivePatternCase).getTypeAccess() // use type access to represent the type test
-    or
-    cfe = cs.(RecursivePatternCase).getRecursivePattern() // a recursive pattern match
+    cfe = cs.getRecursivePattern() // a recursive pattern match
   )
 }
 

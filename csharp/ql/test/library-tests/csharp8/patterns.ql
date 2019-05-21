@@ -26,9 +26,9 @@ query predicate recursivePatternCases(RecursivePatternCase case, RecursivePatter
 }
 
 query predicate recursiveCasePatternDecl(
-  RecursivePatternCase case, TypeAccess ta, LocalVariableDeclExpr decl
+  TypeCase case, TypeAccess ta, LocalVariableDeclExpr decl
 ) {
-  ta = case.getTypeAccess() and decl = case.getVariableDeclExpr()
+  ta = case.getTypeAccess() and decl = case.getVariableDeclExpr() and case.hasRecursivePattern()
 }
 
 query predicate recursivePatternDecl(RecursivePatternExpr pattern, LocalVariableDeclExpr decl) {

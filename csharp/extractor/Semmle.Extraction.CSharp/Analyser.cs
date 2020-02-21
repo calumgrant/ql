@@ -70,6 +70,8 @@ namespace Semmle.Extraction.CSharp
             SetReferencePaths();
 
             CompilationErrors += FilteredDiagnostics.Count();
+
+            trapCache = new TrapCache(options.TrapCacheDir, options.TrapCacheSize);
         }
 
         /// <summary>
@@ -194,11 +196,17 @@ namespace Semmle.Extraction.CSharp
         /// <param name="assembly">Assembly to analyse.</param>
         void AnalyseAssembly(PortableExecutableReference assembly)
         {
+            // Hash the file here
+            var hash = TrapCache.HashContents(assembly.FilePath);
+            Logger.Log(Severity.Info, $"Hash of {assembly.FilePath} = {TrapCache.HashToString(hash, new byte[1] { 1 })}");
+
             // CIL first - it takes longer.
             if (options.CIL)
-                extractionTasks.Add(() => DoExtractCIL(assembly));
-            extractionTasks.Add(() => DoAnalyseAssembly(assembly));
+                extractionTasks.Add(() => DoExtractCIL(assembly, hash));
+            extractionTasks.Add(() => DoAnalyseAssembly(assembly, hash));
         }
+
+        ITrapCache? trapCache;
 
         readonly object progressMutex = new object();
         int taskCount = 0;
@@ -249,18 +257,23 @@ namespace Semmle.Extraction.CSharp
         ///     extraction within the snapshot.
         /// </summary>
         /// <param name="r">The assembly to extract.</param>
-        void DoAnalyseAssembly(PortableExecutableReference r)
+        void DoAnalyseAssembly(PortableExecutableReference r, byte[] hash)
         {
             try
             {
                 var stopwatch = new Stopwatch();
                 stopwatch.Start();
 
+                // !! Incorporate references
+                string hashString = TrapCache.HashToString(hash, new byte[] { 0 });
                 var assemblyPath = r.FilePath;
                 var projectLayout = layout.LookupProjectOrDefault(assemblyPath);
+                bool writeTrapFileToCache = false;
+                string outputPath;
                 using (var trapWriter = projectLayout.CreateTrapWriter(Logger, assemblyPath, true, options.TrapCompression))
                 {
-                    var skipExtraction = options.Cache && File.Exists(trapWriter.TrapFile);
+                    outputPath = trapWriter.TrapFile;
+                    var skipExtraction = options.Cache && File.Exists(outputPath);
 
                     if (!skipExtraction)
                     {
@@ -284,7 +297,9 @@ namespace Semmle.Extraction.CSharp
 
                         var assembly = c.GetAssemblyOrModuleSymbol(r) as IAssemblySymbol;
 
-                        if (assembly != null)
+                        // !! Incorporate dependencies into the 
+
+                        if (trapCache.TryRetrieve(hashString, trapWriter.TrapFile) && assembly != null)
                         {
                             var cx = extractor.CreateContext(c, trapWriter, new AssemblyScope(assembly, assemblyPath, false));
 
@@ -294,11 +309,15 @@ namespace Semmle.Extraction.CSharp
                             }
 
                             cx.PopulateAll();
+
+                            writeTrapFileToCache = true;
                         }
                     }
 
                     ReportProgress(assemblyPath, trapWriter.TrapFile, stopwatch.Elapsed, skipExtraction ? AnalysisAction.UpToDate : AnalysisAction.Extracted);
                 }
+                if (writeTrapFileToCache)
+                    trapCache.Add(hashString, outputPath);
             }
             catch (Exception ex)  // lgtm[cs/catch-of-all-exceptions]
             {
@@ -306,13 +325,13 @@ namespace Semmle.Extraction.CSharp
             }
         }
 
-        void DoExtractCIL(PortableExecutableReference r)
+        void DoExtractCIL(PortableExecutableReference r, byte[] hash)
         {
             var stopwatch = new Stopwatch();
             stopwatch.Start();
             string trapFile;
             bool extracted;
-            CIL.Entities.Assembly.ExtractCIL(layout, r.FilePath, Logger, !options.Cache, options.PDB, options.TrapCompression, out trapFile, out extracted);
+            CIL.Entities.Assembly.ExtractCIL(layout, r.FilePath, Logger, !options.Cache, options.PDB, options.TrapCompression, hash, trapCache, out trapFile, out extracted);
             stopwatch.Stop();
             ReportProgress(r.FilePath, trapFile, stopwatch.Elapsed, extracted ? AnalysisAction.Extracted : AnalysisAction.UpToDate);
         }
@@ -402,6 +421,7 @@ namespace Semmle.Extraction.CSharp
 
         public void Dispose()
         {
+            trapCache?.Dispose();
             compilationTrapFile?.Dispose();
 
             stopWatch.Stop();

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using Xunit;
 
 namespace Semmle.Extraction.Tests
@@ -47,6 +48,10 @@ namespace Semmle.Extraction.Tests
             Assert.NotEqual(h1, h3);
             Assert.NotEqual(h2, h4);
             Assert.NotEqual(h3, h4);
+            Assert.False(h1.SequenceEqual(h2));
+            Assert.False(h1.SequenceEqual(h3));
+            Assert.False(h2.SequenceEqual(h4));
+            Assert.False(h3.SequenceEqual(h4));
         }
 
         [Fact]

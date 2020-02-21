@@ -1,5 +1,6 @@
 using Semmle.Util.Logging;
 using Semmle.Util;
+using System.IO;
 
 namespace Semmle.Extraction
 {
@@ -49,6 +50,16 @@ namespace Semmle.Extraction
         /// </summary>
         public TrapWriter.CompressionMode TrapCompression = TrapWriter.CompressionMode.Gzip;
 
+        /// <summary>
+        /// The directory containing the trap cache.
+        /// </summary>
+        public string TrapCacheDir = Path.Combine(Path.GetTempPath(), "CodeQLTrapCache");
+
+        /// <summary>
+        /// The maximum size of the trap cache.
+        /// </summary>
+        public long TrapCacheSize = 500_000_000;
+
         public virtual bool handleOption(string key, string value)
         {
             switch (key)
@@ -58,6 +69,12 @@ namespace Semmle.Extraction
                     return true;
                 case "verbosity":
                     Verbosity = (Verbosity)int.Parse(value);
+                    return true;
+                case "trapCacheDir":
+                    TrapCacheDir = value;
+                    return true;
+                case "trapCacheSize":
+                    TrapCacheSize = long.Parse(value);
                     return true;
                 default:
                     return false;

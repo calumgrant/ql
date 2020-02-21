@@ -155,7 +155,7 @@ namespace Semmle.Extraction
 #if DEBUG_LABELS
                 using (var id = new StringWriter())
                 {
-                    entity.WriteId(id);
+                    entity.WriteQuotedId(id);
                     CheckEntityHasUniqueLabel(id.ToString(), entity);
                 }
 #endif

@@ -128,24 +128,29 @@ namespace Semmle.Extraction.CIL.Entities
         /// <param name="extractPdbs">Whether to extract PDBs.</param>
         /// <param name="trapFile">The path of the trap file.</param>
         /// <param name="extracted">Whether the file was extracted (false=cached).</param>
-        public static void ExtractCIL(Layout layout, string assemblyPath, ILogger logger, bool nocache, bool extractPdbs, TrapWriter.CompressionMode trapCompression, out string trapFile, out bool extracted)
+        public static void ExtractCIL(Layout layout, string assemblyPath, ILogger logger, bool nocache, bool extractPdbs, TrapWriter.CompressionMode trapCompression, byte[] hash, ITrapCache cache, out string trapFile, out bool extracted)
         {
             trapFile = "";
             extracted = false;
+            var hashString = TrapCache.HashToString(hash, new byte[] { 1 });  //    !! Extractor version + Context
             try
             {
                 var extractor = new Extractor(false, assemblyPath, logger);
                 var project = layout.LookupProjectOrDefault(assemblyPath);
+                bool addFileToCache = false;
                 using (var trapWriter = project.CreateTrapWriter(logger, assemblyPath + ".cil", true, trapCompression))
                 {
                     trapFile = trapWriter.TrapFile;
-                    if (nocache || !System.IO.File.Exists(trapFile))
+                    if (nocache || !System.IO.File.Exists(trapFile) || !cache.TryRetrieve(hashString, trapFile))
                     {
                         var cx = extractor.CreateContext(null, trapWriter, null);
                         ExtractCIL(cx, assemblyPath, extractPdbs);
                         extracted = true;
+                        addFileToCache = true;
                     }
                 }
+                if(addFileToCache)
+                    cache.Add(trapFile, hashString);
             }
             catch (Exception ex)  // lgtm[cs/catch-of-all-exceptions]
             {

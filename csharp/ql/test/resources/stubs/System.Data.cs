@@ -3,7 +3,7 @@ using System;
 namespace System.Data.SqlClient
 {
 
-    public class SqlConnection : Common.DbConnection, IDisposable
+    public abstract class SqlConnection : Common.DbConnection, IDisposable
     {
         public SqlConnection() { }
         public SqlConnection(string connectionString) { }
@@ -17,10 +17,25 @@ namespace System.Data.SqlClient
     {
         public SqlCommand(string s) { }
         public SqlCommand(string s, SqlConnection t) { }
+
         public SqlDataReader ExecuteReader() => null;
+        public override string CommandText { get; set; }
+        public override int CommandTimeout { get; set; }
+        public override System.Data.CommandType CommandType { get; set; }
+        protected override System.Data.Common.DbParameter CreateDbParameter() => default(System.Data.Common.DbParameter);
+        protected override System.Data.Common.DbConnection DbConnection { get; set; }
+        protected override System.Data.Common.DbParameterCollection DbParameterCollection => default(System.Data.Common.DbParameterCollection);
+        protected override System.Data.Common.DbTransaction DbTransaction { get; set; }
+        public override System.Data.UpdateRowSource UpdatedRowSource { get; set; }
+        public override void Cancel() { }
+        public override bool DesignTimeVisible { get; set; }
+        protected override System.Data.Common.DbDataReader ExecuteDbDataReader(System.Data.CommandBehavior behavior) => null;
+        public override int ExecuteNonQuery() => 0;
+        public override object ExecuteScalar() => default(object);
+        public override void Prepare() { }
     }
 
-    public class SqlDataReader : Common.DbDataReader, IDataReader, IDataRecord
+    public abstract class SqlDataReader : Common.DbDataReader, IDataReader, IDataRecord
     {
         public override string GetString(int i) => "";
     }
@@ -35,9 +50,19 @@ namespace System.Data.SqlClient
     public class SqlParameter : Common.DbParameter, IDbDataParameter, IDataParameter
     {
         public SqlParameter(string s, object o) { }
+
+        public override System.Data.DbType DbType { get; set; }
+        public override System.Data.ParameterDirection Direction { get; set; }
+        public override bool IsNullable { get; set; }
+        public override string ParameterName { get; set; }
+        public override int Size { get; set; }
+        public override string SourceColumn { get; set; }
+        public override bool SourceColumnNullMapping { get; set; }
+        public override object Value { get; set; }
+        public override void ResetDbType() { }
     }
 
-    public class SqlParameterCollection : Common.DbParameterCollection
+    public abstract class SqlParameterCollection : Common.DbParameterCollection
     {
     }
 
@@ -100,62 +125,10 @@ namespace System.Data
     }
 }
 
-namespace System.Data.Common
-{
-
-    public abstract class DbConnection : IDbConnection
-    {
-        public virtual string ConnectionString { get; set; }
-        string IDbConnection.ConnectionString { get; set; }
-        public abstract void Open();
-        public abstract void Close();
-    }
-
-    public class DbDataReader : IDataReader
-    {
-        public bool Read() => false;
-        public void Close() { }
-        public virtual string GetString(int i) => "";
-    }
-
-    public abstract class DbCommand : IDbCommand, IDisposable
-    {
-        public DbDataReader ExecuteReader() => null;
-        public CommandType CommandType { get; set; }
-        public IDataParameterCollection Parameters { get; set; }
-        IDataReader IDbCommand.ExecuteReader() => null;
-        public void Dispose() { }
-        public string CommandText { get; set; }
-    }
-
-    public class DbDataAdapter : IDataAdapter, IDbDataAdapter
-    {
-    }
-
-    public class DbParameter : IDbDataParameter, IDataParameter
-    {
-    }
-
-    public class DbParameterCollection : IDataParameterCollection
-    {
-        public void Add(object obj) { }
-    }
-
-    public class DbConnectionStringBuilder
-    {
-        public virtual object this[string keyword] { get => null; set { } }
-        public virtual string ConnectionString { get; set; }
-    }
-
-    public class DbException : Exception
-    {
-    }
-}
-
 namespace System.Data.OleDb
 {
 
-    public class OleDbConnection : Common.DbConnection, IDisposable
+    public abstract class OleDbConnection : Common.DbConnection, IDisposable
     {
         public OleDbConnection(string s) { }
         void IDisposable.Dispose() { }
@@ -163,19 +136,19 @@ namespace System.Data.OleDb
         public override void Close() { }
     }
 
-    public class OleDbDataReader : Common.DbDataReader
+    public abstract class OleDbDataReader : Common.DbDataReader
     {
-        public bool Read() => false;
+        public override bool Read() => false;
         public void Close()
         {
         }
 
-        public string GetString(int x) => null;
+        public override string GetString(int x) => null;
 
-        public object this[string s] => null;
+        public override object this[string s] => null;
     }
 
-    public class OleDbCommand : Common.DbCommand
+    public abstract class OleDbCommand : Common.DbCommand
     {
         public OleDbCommand(string e, OleDbConnection c)
         {
@@ -184,4 +157,3 @@ namespace System.Data.OleDb
         public OleDbDataReader ExecuteReader() => null;
     }
 }
-

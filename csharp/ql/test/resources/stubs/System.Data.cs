@@ -3,7 +3,7 @@ using System;
 namespace System.Data.SqlClient
 {
 
-    public abstract class SqlConnection : Common.DbConnection, IDisposable
+    public class SqlConnection : Common.DbConnection, IDisposable
     {
         public SqlConnection() { }
         public SqlConnection(string connectionString) { }
@@ -11,6 +11,14 @@ namespace System.Data.SqlClient
         public override string ConnectionString { get; set; }
         public override void Open() { }
         public override void Close() { }
+        public override System.Data.ConnectionState State => default(System.Data.ConnectionState);
+        protected override System.Data.Common.DbCommand CreateDbCommand() => null;
+
+        protected override System.Data.Common.DbTransaction BeginDbTransaction(System.Data.IsolationLevel isolationLevel) => null;
+        public override void ChangeDatabase(string databaseName) { }
+        public override string ServerVersion => null;
+        public override string Database => "";
+        public override string DataSource => "";
     }
 
     public class SqlCommand : Common.DbCommand
